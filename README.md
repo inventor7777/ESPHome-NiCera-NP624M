@@ -6,6 +6,8 @@ It uses two GPIO pins; no UART or separate hub configuration is required.
 
 NP624M-F is a working identification, not a confirmed part number. The tested sensor is marked `350 / NiCERA / 46BF`.
 
+# Component/Hub
+
 ```yaml
 external_components:
   - source: github://inventor7777/ESPHome-NiCera-NP624M
@@ -45,7 +47,7 @@ Both pins must be distinct internal GPIOs configured as non-inverted push-pull
 outputs. The short pin syntax in the example supplies that configuration;
 open-drain and additional pin-mode flags are rejected.
 
-## Motion and filtering
+# Binary Sensor
 
 Settings are applied and read back at startup. Motion remains unknown until
 verification succeeds. After five failed attempts, the component reports a
