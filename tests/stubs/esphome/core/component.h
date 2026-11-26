@@ -15,13 +15,14 @@ class Component {
   void set_timeout(const char *, unsigned delay, std::function<void()> fn) {
     pending.emplace_back(delay, std::move(fn));
   }
-  void mark_failed() { failed = true; }
+  void status_set_warning() { warning = true; }
+  void status_clear_warning() { warning = false; }
   void run_next_timeout() {
     auto fn = std::move(pending.front().second);
     pending.erase(pending.begin());
     fn();
   }
-  bool failed = false;
+  bool warning = false;
   std::vector<std::pair<unsigned, std::function<void()>>> pending;
 };
 }

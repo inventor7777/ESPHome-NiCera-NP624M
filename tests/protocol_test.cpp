@@ -75,7 +75,7 @@ int main() {
     check_written_frame(serial, settings.expected);
     direct.readback(settings.expected);
     pir.run_next_timeout();
-    assert(!pir.failed && pir.states == std::vector<bool>{false});
+    assert(!pir.warning && pir.states == std::vector<bool>{false});
   }
   for (uint8_t threshold : {1, 15, 255}) {
     nicera_np624m::NiceraNP624M pir;
@@ -95,7 +95,7 @@ int main() {
     assert(direct.reads.empty());
     assert(direct.mode == (gpio::FLAG_INPUT | gpio::FLAG_PULLUP));
     assert(direct.extra_edges == 0);
-    assert(!pir.failed && pir.states == std::vector<bool>{false});
+    assert(!pir.warning && pir.states == std::vector<bool>{false});
     direct.reads = {true, false, true, false};
     for (unsigned i = 0; i < 4; ++i) pir.loop();
     assert(std::count(delays.begin(), delays.end(), 2000) == 3);
@@ -109,20 +109,23 @@ int main() {
     pir.set_serial_in_pin(&serial);
     pir.set_direct_link_pin(&direct);
     pir.setup();
-    for (unsigned attempt = 0; attempt < 5; ++attempt) {
+    for (unsigned attempt = 0; attempt < 7; ++attempt) {
       direct.readback(attempt % 2 ? 0x1FFFFFF : 0);
       pir.run_next_timeout();
       assert(pir.states.empty());
-      if (attempt < 4) {
-        assert(!pir.failed && pir.pending.front().first == 500);
-        pir.run_next_timeout();
-      }
+      assert(pir.warning == (attempt >= 4));
+      assert(pir.pending.front().first == (attempt < 4 ? 500 : 30000));
+      assert(direct.mode == (gpio::FLAG_INPUT | gpio::FLAG_PULLUP));
+      pir.loop();  // Failed verification must not produce a false motion reading.
+      assert(pir.states.empty());
+      pir.run_next_timeout();
     }
-    assert(pir.failed && pir.pending.empty());
+    direct.readback(0x1E0B00);
+    pir.run_next_timeout();
+    assert(!pir.warning && pir.pending.empty());
+    assert(pir.states == std::vector<bool>{false});
     assert(direct.mode == (gpio::FLAG_INPUT | gpio::FLAG_PULLUP));
     assert(direct.extra_edges == 0);
-    pir.loop();  // Failure must not produce a false motion reading.
-    assert(pir.states.empty());
   }
   {
     nicera_np624m::NiceraNP624M pir;
@@ -135,6 +138,6 @@ int main() {
     pir.run_next_timeout();
     direct.readback(0x1E0B00);
     pir.run_next_timeout();
-    assert(!pir.failed && pir.states == std::vector<bool>{false});
+    assert(!pir.warning && pir.states == std::vector<bool>{false});
   }
 }

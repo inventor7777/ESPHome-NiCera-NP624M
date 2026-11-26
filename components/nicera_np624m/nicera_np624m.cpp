@@ -30,7 +30,8 @@ void NiceraNP624M::drive_direct_low_() {
 }
 
 void NiceraNP624M::configure_() {
-  ++attempts_;
+  if (attempts_ < 5)
+    ++attempts_;
   const uint32_t config = configuration_();
   // Keep DIRECT LINK low during configuration; only the timed bit stream needs the lock.
   drive_direct_low_();
@@ -56,9 +57,28 @@ uint32_t NiceraNP624M::read_configuration_() {
   {
     InterruptLock lock;
     drive_direct_low_();
+#if defined(USE_LIBRETINY) && LT_RTL8720C
+    // Match the stock GPIO turnaround without reconfiguring the pad on every bit.
+    auto *direct = pinData(pinInfo(direct_link_pin_->get_pin()))->gpio;
+    gpio_mode(direct, PullUp);
+    const auto settle = []() { asm volatile("nop\nnop\nnop" ::: "memory"); };
+    gpio_write(direct, 1);
+#else
     direct_link_pin_->digital_write(true);
+#endif
     delay_microseconds_safe(224);
     for (uint8_t bit = 0; bit < 40; ++bit) {
+#if defined(USE_LIBRETINY) && LT_RTL8720C
+      gpio_write(direct, 0);
+      settle();
+      gpio_write(direct, 1);
+      settle();
+      gpio_dir(direct, PIN_INPUT);
+      gpio_write(direct, 0);
+      settle();
+      const bool value = gpio_read(direct) != 0;
+      gpio_dir(direct, PIN_OUTPUT);
+#else
       direct_link_pin_->digital_write(false);
       delay_microseconds_safe(1);
       direct_link_pin_->digital_write(true);
@@ -66,9 +86,10 @@ uint32_t NiceraNP624M::read_configuration_() {
       direct_link_pin_->pin_mode(gpio::FLAG_INPUT | gpio::FLAG_PULLUP);
       delay_microseconds_safe(2);
       const bool value = direct_link_pin_->digital_read();
+      drive_direct_low_();
+#endif
       if (bit >= 15)
         config = (config << 1) | value;
-      drive_direct_low_();
     }
     delay_microseconds_safe(182);
   }
@@ -79,16 +100,16 @@ uint32_t NiceraNP624M::read_configuration_() {
 void NiceraNP624M::verify_() {
   const uint32_t actual = read_configuration_();
   if (actual != configuration_()) {
-    ESP_LOGW(TAG, "Configuration mismatch: expected 0x%07lX, received 0x%07lX (attempt %u/5)",
-             static_cast<unsigned long>(configuration_()), static_cast<unsigned long>(actual), attempts_);
-    if (attempts_ < 5) {
-      set_timeout("configure", 500, [this]() { configure_(); });
-    } else {
-      ESP_LOGE(TAG, "PIR configuration failed; motion state remains unknown");
-      mark_failed();
-    }
+    const uint32_t retry_delay = attempts_ < 5 ? 500 : 30000;
+    ESP_LOGW(TAG, "Configuration mismatch: expected 0x%07lX, received 0x%07lX; retrying in %lu ms",
+             static_cast<unsigned long>(configuration_()), static_cast<unsigned long>(actual),
+             static_cast<unsigned long>(retry_delay));
+    if (attempts_ == 5)
+      this->status_set_warning();
+    set_timeout("configure", retry_delay, [this]() { configure_(); });
     return;
   }
+  this->status_clear_warning();
   acknowledge_();
   ready_ = true;
   publish_state(false);

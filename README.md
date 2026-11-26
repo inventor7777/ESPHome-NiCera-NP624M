@@ -51,7 +51,7 @@ open-drain and additional pin-mode flags are rejected.
 
 Settings are applied and read back at startup. Motion remains unknown until
 verification succeeds. After five failed attempts, the component reports a
-configuration failure and leaves motion unknown.
+warning and retries every 30 seconds until the readback matches.
 
 The sensor's motion signal is acknowledged immediately. To hold the ESPHome
 motion state on for longer, use a native binary sensor filter:
